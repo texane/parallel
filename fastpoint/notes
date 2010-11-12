@@ -1,0 +1,6 @@
+. pas super interessant
+ . non reentrant, ne marche que pour un master/slave
+ . doit restaurer, cout
+ . changement de protection des pages
+ . pas de gain en terme de cycle (peut etre en terme de branchement)
+ . doit etre aligne, ce qui augmente le nombre de nops a faire
