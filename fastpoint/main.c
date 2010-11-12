@@ -10,6 +10,35 @@
 #include "../tick/tick.h"
 
 
+/* master slave synchro */
+static pthread_barrier_t global_barrier;
+
+/* volatile since enter_preemptpoint optimized by gcc */
+static volatile uint64_t global_ticks = 0;
+static volatile uint64_t global_iter = 0;
+
+
+static void enter_preemptpoint(void)
+{
+  /* the place the thief goes to when preempted
+   */
+
+#if CONFIG_USE_FASTPOINT
+  /* push a fake retpc, we did not enter conventionally */
+  __asm__ __volatile__ ("push $0\n\t");
+#endif
+
+  const double mean = (double)global_ticks / (double)global_iter;
+
+  printf("reached enter_preemptpoint %lf (%lu)\n", mean, global_iter);
+  fflush(stdout);
+
+  pthread_exit(NULL);
+}
+
+
+#if CONFIG_USE_FASTPOINT
+
 typedef struct fastpoint
 {
   /* the idea of a fastpoint is to export an
@@ -28,33 +57,6 @@ typedef struct fastpoint
  */
 
 typedef struct fastpoint preemptpoint_t;
-
-/* global preemptpoint */
-static preemptpoint_t global_pp;
-
-/* master slave synchro */
-static pthread_barrier_t global_barrier;
-
-/* volatile since enter_preemptpoint optimized by gcc */
-static volatile uint64_t global_ticks = 0;
-static volatile uint64_t global_iter = 0;
-
-static void enter_preemptpoint(void)
-{
-  /* this is the place where the thief is told to
-     jump by the master upon preemption.
-   */
-
-  /* push a fake retpc, we did not enter conventionally */
-  __asm__ __volatile__ ("push $0\n\t");
-
-  const double mean = (double)global_ticks / (double)global_iter;
-
-  printf("reached enter_preemptpoint %lf\n", mean);
-  fflush(stdout);
-
-  pthread_exit(NULL);
-}
 
 
 static void signal_preemptpoint
@@ -105,6 +107,38 @@ do {					\
   );					\
 } while (0)
 
+#else /* ! CONFIG_USE_FASTPOINT */
+
+struct slowpoint
+{
+  volatile unsigned int value __attribute__((aligned(64)));
+};
+
+typedef struct slowpoint preemptpoint_t;
+
+static inline void signal_preemptpoint
+(preemptpoint_t* pp)
+{
+  pp->value = 1;
+}
+
+static inline void make_preemptpoint
+(preemptpoint_t* pp)
+{
+  pp->value = 0;
+}
+
+static inline void test_preemptpoint
+(preemptpoint_t* pp)
+{
+  if (pp->value) enter_preemptpoint();
+}
+
+#endif /* CONFIG_USE_FASTPOINT */
+
+
+/* global preemptpoint */
+static preemptpoint_t global_pp;
 
 static void* slave_entry(void* foo)
 {
