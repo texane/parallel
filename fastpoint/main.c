@@ -10,21 +10,49 @@
 #include "../tick/tick.h"
 
 
-typedef struct preemptpoint
+typedef struct fastpoint
 {
+  /* the idea of a fastpoint is to export an
+     address to write. this address points to
+     a branching instruction whose operand must
+     be read and written atomically to avoid
+     corruption. to do so, we align
+   */
+
   void* volatile addr_towrite;
-} preemptpoint_t;
 
+} fastpoint_t;
 
-static pthread_barrier_t global_barrier;
+/* a preempt point is an exampe of fastpoint,
+   as is a stealpoint.
+ */
+
+typedef struct fastpoint preemptpoint_t;
+
+/* global preemptpoint */
 static preemptpoint_t global_pp;
-static uint64_t global_ticks = 0;
-static size_t global_iter = 0;
+
+/* master slave synchro */
+static pthread_barrier_t global_barrier;
+
+/* volatile since enter_preemptpoint optimized by gcc */
+static volatile uint64_t global_ticks = 0;
+static volatile uint64_t global_iter = 0;
 
 static void enter_preemptpoint(void)
 {
-  printf("enter_preemptpoint\n");
+  /* this is the place where the thief is told to
+     jump by the master upon preemption.
+   */
+
+  /* push a fake retpc, we did not enter conventionally */
+  __asm__ __volatile__ ("push $0\n\t");
+
+  const double mean = (double)global_ticks / (double)global_iter;
+
+  printf("reached enter_preemptpoint %lf\n", mean);
   fflush(stdout);
+
   pthread_exit(NULL);
 }
 
