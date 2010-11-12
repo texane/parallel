@@ -1,0 +1,14 @@
+La seule chose que je mesure donc c est le parcours sequentiel
+apres prefetch. Voila les temps:
+sans prefetch: 700 usecs
+avec __builtin_prefetch: 700
+avec prefetch main: 480
+
+Je n arrive pas a faire fonctionner le prefetcher avec la builtin
+gcc associe. En lancant le prefetcher "a la main" (acces memoire
+a la main), j ai de meilleurs temps mais je suppose que c est parce
+que je peuple le cache, pas parce que le prefetcher se lance...
+
+
+-- xps
+. use of NTA for writes to not pollute the cache
