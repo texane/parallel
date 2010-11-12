@@ -5,18 +5,21 @@
 #include <string.h>
 #include <pthread.h>
 #include <errno.h>
+#include <sys/types.h>
 #include <sys/mman.h>
+#include "../tick/tick.h"
 
 
 typedef struct preemptpoint
 {
-  volatile uintptr_t addr_towrite;
+  void* volatile addr_towrite;
 } preemptpoint_t;
 
 
 static pthread_barrier_t global_barrier;
-static preemptpoint_t global_pp; 
-
+static preemptpoint_t global_pp;
+static uint64_t global_ticks = 0;
+static size_t global_iter = 0;
 
 static void enter_preemptpoint(void)
 {
@@ -35,8 +38,8 @@ static void signal_preemptpoint
   /* relative addr */
 #define CALL_INSN_SIZE 5
   const int32_t reladdr = (int32_t)
-    (long)(uintptr_t)enter_preemptpoint -
-    ((long)pp->addr_towrite + (long)CALL_INSN_SIZE);
+    ((long)(uintptr_t)enter_preemptpoint) -
+    (long)((uintptr_t)pp->addr_towrite + CALL_INSN_SIZE);
 
   /* <call> <addr_tocall> */
   *(insn + 0) = 0xe9;
@@ -44,7 +47,7 @@ static void signal_preemptpoint
   memset(insn + CALL_INSN_SIZE, 0x90, sizeof(insn) - CALL_INSN_SIZE);
 
   /* write the instruction buffer */
-  *(volatile uint64_t*)pp->addr_towrite = *(uint64_t*)insn;
+  *(uint64_t* volatile)pp->addr_towrite = *(uint64_t*)insn;
   __sync_synchronize();
 }
 
@@ -57,7 +60,7 @@ do {							\
     ((uintptr_t)&__addr_towrite) & ~(0x1000UL - 1UL);	\
   mprotect((void*)page_addr, 0x1000,			\
     PROT_READ | PROT_WRITE | PROT_EXEC);		\
-  (__pp)->addr_towrite = (uintptr_t)&__addr_towrite;	\
+  (__pp)->addr_towrite = (void*)&__addr_towrite;	\
 } while (0)
 
 
@@ -80,11 +83,21 @@ static void* slave_entry(void* foo)
   make_preemptpoint(&global_pp);
   pthread_barrier_wait(&global_barrier);
 
+  global_iter = 0;
+
   while (1)
   {
     /* do some processing */
 
+    tick_counter_t start, stop;
+
+    tick_read(&start);
     test_preemptpoint(&global_pp);
+    tick_read(&stop);
+
+    global_ticks += stop.value - start.value;
+
+    ++global_iter;
   }
 
   return NULL;
